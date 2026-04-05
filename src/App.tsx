@@ -8,7 +8,12 @@ import {
   parseCipherBundle,
   serializeCipherBundle,
 } from './lib/crypto/encrypt';
-import { deriveAddresses, type NetworkId } from './lib/addresses';
+import {
+  deriveAddresses,
+  deriveEvmAndBscFromWords,
+  type NetworkId,
+  type EvmWordsDerivationResult,
+} from './lib/addresses';
 import type { InputKind } from './lib/keys/normalizeInput';
 import { toArrayBuffer } from './lib/utils/encoding';
 
@@ -63,6 +68,16 @@ export default function App() {
   const [fileDecryptUrl, setFileDecryptUrl] = useState('');
   const [fileDecryptName, setFileDecryptName] = useState('');
   const [fileError, setFileError] = useState('');
+  const [walletWords, setWalletWords] = useState('');
+  const [walletSalt, setWalletSalt] = useState('');
+  const [walletRounds, setWalletRounds] = useState('1');
+  const [walletNoNormalize, setWalletNoNormalize] = useState(false);
+  const [walletJson, setWalletJson] = useState(true);
+  const [walletOutFileName, setWalletOutFileName] = useState('derived-evm-wallet.json');
+  const [walletOutput, setWalletOutput] = useState('');
+  const [walletError, setWalletError] = useState('');
+  const [walletResult, setWalletResult] = useState<EvmWordsDerivationResult | null>(null);
+  const [walletCopyStatus, setWalletCopyStatus] = useState('');
 
   const selectedNetworkLabels = useMemo(
     () => networkOptions.filter((network) => selectedNetworks.includes(network.id)).map((network) => network.label),
@@ -168,6 +183,69 @@ export default function App() {
     anchor.click();
   }
 
+  function handleCreateWalletByWords() {
+    const rounds = Number.parseInt(walletRounds, 10);
+    if (!Number.isFinite(rounds) || rounds < 1) {
+      setWalletError('rounds must be >= 1');
+      return;
+    }
+
+    try {
+      const result = deriveEvmAndBscFromWords({
+        words: walletWords,
+        salt: walletSalt,
+        rounds,
+        normalizeInput: !walletNoNormalize,
+      });
+      setWalletResult(result);
+
+      if (walletJson) {
+        setWalletOutput(JSON.stringify(result, null, 2));
+      } else {
+        setWalletOutput(
+          [
+            'Derived EVM Private Key',
+            `Private Key: ${result.private_key}`,
+            `ETH Address: ${result.ethereum.address}`,
+            `BSC Address: ${result.bsc.address} (chain_id=${result.bsc.chain_id})`,
+            'Note: ETH and BSC use the same private key format.',
+          ].join('\n'),
+        );
+      }
+
+      setWalletError('');
+      setWalletCopyStatus('');
+    } catch (error) {
+      setWalletError(error instanceof Error ? error.message : 'Wallet derivation failed');
+      setWalletResult(null);
+    }
+  }
+
+  function handleDownloadWalletOutput() {
+    if (!walletOutput.trim()) {
+      setWalletError('Generate wallet output first.');
+      return;
+    }
+
+    const fileName = walletOutFileName.trim() || 'derived-evm-wallet.json';
+    const blob = new Blob([walletOutput], { type: walletJson ? 'application/json' : 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleCopyWalletValue(label: string, value: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      setWalletCopyStatus(`${label} copied.`);
+    } catch {
+      setWalletCopyStatus(`Could not copy ${label.toLowerCase()}.`);
+    }
+  }
+
   return (
     <main className="app-shell">
       <section className="hero panel">
@@ -188,6 +266,83 @@ export default function App() {
       </section>
 
       <section className="grid">
+        <article className="panel">
+          <h2>Create wallet from words</h2>
+          <div className="field-grid">
+            <textarea
+              value={walletWords}
+              onChange={(event) => setWalletWords(event.target.value)}
+              placeholder="words"
+            />
+            <input
+              value={walletSalt}
+              onChange={(event) => setWalletSalt(event.target.value)}
+              placeholder="salt"
+            />
+            <input
+              value={walletRounds}
+              onChange={(event) => setWalletRounds(event.target.value)}
+              placeholder="rounds (default: 1)"
+            />
+            <div className="row">
+              <label className="badge" style={{ display: 'flex', gap: '0.45rem', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={walletNoNormalize}
+                  onChange={(event) => setWalletNoNormalize(event.target.checked)}
+                />
+                no-normalize
+              </label>
+              <label className="badge" style={{ display: 'flex', gap: '0.45rem', alignItems: 'center' }}>
+                <input
+                  type="checkbox"
+                  checked={walletJson}
+                  onChange={(event) => setWalletJson(event.target.checked)}
+                />
+                json output
+              </label>
+            </div>
+            <input
+              value={walletOutFileName}
+              onChange={(event) => setWalletOutFileName(event.target.value)}
+              placeholder="out file name"
+            />
+            <div className="actions">
+              <button type="button" onClick={handleCreateWalletByWords}>Create wallet</button>
+              <button type="button" className="secondary" onClick={handleDownloadWalletOutput}>Download output</button>
+            </div>
+            <div className="actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={!walletResult}
+                onClick={() => walletResult && handleCopyWalletValue('Private key', walletResult.private_key)}
+              >
+                Copy private key
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!walletResult}
+                onClick={() => walletResult && handleCopyWalletValue('ETH address', walletResult.ethereum.address)}
+              >
+                Copy ETH address
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!walletResult}
+                onClick={() => walletResult && handleCopyWalletValue('BSC address', walletResult.bsc.address)}
+              >
+                Copy BSC address
+              </button>
+            </div>
+            {walletCopyStatus ? <p className="small success">{walletCopyStatus}</p> : null}
+            <div className="output">{walletOutput || 'Wallet output appears here.'}</div>
+            {walletError ? <div className="output warning">{walletError}</div> : null}
+          </div>
+        </article>
+
         <article className="panel">
           <h2>SHA-256</h2>
           <div className="field-grid">
