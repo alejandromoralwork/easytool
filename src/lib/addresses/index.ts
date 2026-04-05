@@ -3,6 +3,16 @@ import { deriveEvmAddress, deriveTronAddressAsync } from './evm';
 import { deriveSolanaAddress } from './solana';
 import { resolvePublicKeyHex, toUncompressedPublicKeyHex, type InputKind } from '../keys/normalizeInput';
 
+export {
+  normalizeWords,
+  derivePrivateKeyFromWords,
+  buildEvmWordsDerivationResult,
+  deriveEvmAndBscFromWords,
+  type DerivePrivateKeyOptions,
+  type DerivationInputData,
+  type EvmWordsDerivationResult,
+} from './evmWordsDerivation';
+
 export type NetworkId = 'btc' | 'ltc' | 'doge' | 'eth' | 'trx' | 'sol' | 'pol';
 
 export interface AddressResult {
